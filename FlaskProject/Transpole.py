@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import flask_restful as restful
 import requests
@@ -16,8 +16,10 @@ class Transpole(restful.Resource):
         options += "&lineSchedule[line]=line:TRA:{line}".format(line=line)
         options += "&lineSchedule[route]=route:TRA:{route}".format(route=direction)
         # options += "&lineSchedule[route]=route:TRA:ME1_R"
-        now = datetime.now()
-        options += "&lineSchedule[from_datetime]={date}".format(date=now.strftime("%d/%m/%Y"))
+        query_time = datetime.now()
+        if query_time.hour < 1:
+            query_time -= timedelta(days=1)
+        options += "&lineSchedule[from_datetime]={date}".format(date=query_time.strftime("%d/%m/%Y"))
         options += "&lineSchedule[line_daypart]=4-7"
         r = requests.get(url_base + options)
         soup = BeautifulSoup(r.text)
@@ -27,14 +29,27 @@ class Transpole(restful.Resource):
         if len(stations_data) <= start_station:
             return {'error': 'bad parameters'}
         index_of_start_time = 0
-        for station in stations_data[start_station:]:
+        for idx_station, station in enumerate(stations_data[start_station:]):
             timetable = []
             for idx, item_of_timetable in enumerate(station.find_all('td')[index_of_start_time:]):
                 time = item_of_timetable.get_text().strip()
-                [hour, minute] = time.split('h')
-                if (not timetable) and (int(hour) < now.hour or (int(hour) == now.hour and int(minute) < now.minute)):
+                if time == '-':
+                    time = '3h00'
+                if int(time.split('h')[0]) < 3:
+                    query_time_tomorrow = query_time + timedelta(days=1)
+                    time_str = str(query_time_tomorrow.year) + '-' + str(query_time_tomorrow.month) + '-' + str(
+                        query_time_tomorrow.day) + '-' + time.replace('h', '-')
+                    dt = datetime.strptime(time_str, '%Y-%m-%d-%H-%M')
+                else:
+                    time_str = str(query_time.year) + '-' + str(query_time.month) + '-' + str(
+                        query_time.day) + '-' + time.replace('h', '-')
+                    dt = datetime.strptime(time_str, '%Y-%m-%d-%H-%M')
+
+                if idx_station == 0 and dt < datetime.now():
                     index_of_start_time = idx + 1
                     continue
+                if time == '3h00':
+                    time = '-'
                 timetable.append(time)
             stations.append({'name': station.th.get_text().strip(), 'timetable': timetable})
         for i in range(len(stations[0]['timetable'])):
@@ -42,4 +57,4 @@ class Transpole(restful.Resource):
             for station in stations:
                 route.append(station['timetable'][i])
             routes.append(route)
-        return {'routes': routes, 'stations': stations}
+        return {'url': url_base + options, 'routes': routes, 'stations': stations}
