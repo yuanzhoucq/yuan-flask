@@ -4,14 +4,38 @@ import flask_restful as restful
 import requests
 from bs4 import BeautifulSoup
 
+cached_data = {}
+
+
+def fetch_data(url_options):
+    cache = cached_data.get('url_base')
+    if cache:
+        if cache['time'] > datetime.now() - timedelta(days=1):
+            url_base = cache['url_base']
+        else:
+            r = requests.get('https://www.transpole.fr/cms/institutionnel/fr/se-deplacer/#horaires')
+            soup = BeautifulSoup(r.text)
+            url_base = soup.find(id='iframe-horaire').attrs['src']
+            cached_data['url_base'] = {'url_base': url_base, 'time': datetime.now()}
+    else:
+        r = requests.get('https://www.transpole.fr/cms/institutionnel/fr/se-deplacer/#horaires')
+        soup = BeautifulSoup(r.text)
+        url_base = soup.find(id='iframe-horaire').attrs['src']
+        cached_data['url_base'] = {'url_base': url_base, 'time': datetime.now()}
+    url = url_base + url_options
+    cache = cached_data.get(url)
+    if cache:
+        if cache['time'] > datetime.now() - timedelta(minutes=10):
+            return url, BeautifulSoup(cache['data'])
+    r = requests.get(url)
+    cached_data[url] = {'time': datetime.now(), 'data': r.text}
+    return url, BeautifulSoup(r.text)
+
 
 class Transpole(restful.Resource):
     def get(self, line, direction, start_station):
         if not ((line == 'ME1' or line == 'ME2') and (direction == line or direction == line + '_R')):
             return {'error': 'bad parameters'}
-        r = requests.get('https://www.transpole.fr/cms/institutionnel/fr/se-deplacer/#horaires')
-        soup = BeautifulSoup(r.text)
-        url_base = soup.find(id='iframe-horaire').attrs['src']
         options = "schedule/line/result/?lineSchedule[network]=network:TRANSPOLE"
         options += "&lineSchedule[line]=line:TRA:{line}".format(line=line)
         options += "&lineSchedule[route]=route:TRA:{route}".format(route=direction)
@@ -21,8 +45,7 @@ class Transpole(restful.Resource):
             query_time -= timedelta(days=1)
         options += "&lineSchedule[from_datetime]={date}".format(date=query_time.strftime("%d/%m/%Y"))
         options += "&lineSchedule[line_daypart]=4-7"
-        r = requests.get(url_base + options)
-        soup = BeautifulSoup(r.text)
+        url, soup = fetch_data(options)
         stations_data = soup.tbody.find_all('tr')
         stations = []
         routes = []
@@ -57,4 +80,4 @@ class Transpole(restful.Resource):
             for station in stations:
                 route.append(station['timetable'][i])
             routes.append(route)
-        return {'url': url_base + options, 'routes': routes, 'stations': stations}
+        return {'url': url, 'routes': routes, 'stations': stations}
