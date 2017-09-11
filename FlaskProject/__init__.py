@@ -1,10 +1,15 @@
 import flask_restful as restful
-from flask import Flask
+from flask import Flask, redirect
 
 from FlaskProject.Transpole import Transpole
 
 app = Flask(__name__)
 api = restful.Api(app)
+
+
+@app.route('/', methods=['GET'])
+def index():
+    return redirect('/web/')
 
 
 class HelloWorld(restful.Resource):
