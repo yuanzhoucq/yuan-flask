@@ -58,6 +58,11 @@ class Transpole(restful.Resource):
                 time = item_of_timetable.get_text().strip()
                 if time == '-':
                     time = '3h00'
+                # sometimes the format of time is like '23h43(0)'
+                # to indicate that it's not a complete route,
+                # we ignore the '(0)'
+                if len(time) > 5:
+                    time = time[:5]
                 if int(time.split('h')[0]) < 3:
                     query_time_tomorrow = query_time + timedelta(days=1)
                     time_str = str(query_time_tomorrow.year) + '-' + str(query_time_tomorrow.month) + '-' + str(
@@ -68,7 +73,7 @@ class Transpole(restful.Resource):
                         query_time.day) + '-' + time.replace('h', '-')
                     dt = datetime.strptime(time_str, '%Y-%m-%d-%H-%M')
 
-                if idx_station == 0 and dt < datetime.now():
+                if idx_station == 0 and timetable == [] and dt < datetime.now():
                     index_of_start_time = idx + 1
                     continue
                 if time == '3h00':
